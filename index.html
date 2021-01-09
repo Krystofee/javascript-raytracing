@@ -160,16 +160,12 @@
         }
       }
 
-      const scene = [
-        new Sphere(new Vec3(0, 0, -1), 0.5),
-        new Sphere(new Vec3(1, 0, -1), 0.25),
-      ];
-
+      const scene = [new Sphere(new Vec3(0, 0, -1), 0.5)];
       const aspectRatio = canvas.width / canvas.height;
 
       const viewportHeight = 2;
       const viewportWidth = viewportHeight * aspectRatio;
-      const focalLength = 0.5;
+      const focalLength = 1;
 
       //camera
       const origin = new Vec3(0, 0, 0);
@@ -194,7 +190,7 @@
           .add(new Vec3(125, 178, 255).mulNum(t));
       }
 
-      const sampleCount = 50;
+      const sampleCount = 10;
 
       for (let y = 0; y < canvas.height; y++) {
         for (let x = 0; x < canvas.width; x++) {
@@ -225,30 +221,6 @@
           );
         }
       }
-
-      function min(list) {
-        if (list.length === 2) {
-          return list[0] < list[1] ? list[0] : list[1];
-        }
-
-        if (list.length === 1) {
-          return list[0];
-        }
-
-        if (list.length === 0) {
-          return null;
-        }
-
-        if (list[0] < min(list.slice(1))) {
-          return list[0];
-        } else {
-          return min(list.slice(1));
-        }
-      }
-
-      console.log(min([5, 23, 4, 5643, 646]));
-      console.log(min([4, 3, 2, 1]));
-      console.log(min([2, 3, 4, 5]));
 
       updateCanvas();
     </script>
