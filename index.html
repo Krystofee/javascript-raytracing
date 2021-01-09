@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      #main-canvas {
+        border: 1px solid #00000030;
+      }
+
+      .flex {
+        display: flex;
+      }
+
+      .flex.center {
+        justify-content: center;
+      }
+
+      .mt-4 {
+        margin-top: 4rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="flex center mt-4">
+      <canvas id="main-canvas" width="1920" height="1080"></canvas>
+    </div>
+
+    <script>
+      const canvas = document.getElementById("main-canvas");
+      const ctx = canvas.getContext("2d");
+
+      if (ctx === null) {
+        throw Error("Unable to initialize canvas");
+      }
+
+      const canvasData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      function drawPixel(x, y, r, g, b, a) {
+        var index = (x + y * canvas.width) * 4;
+
+        canvasData.data[index + 0] = r;
+        canvasData.data[index + 1] = g;
+        canvasData.data[index + 2] = b;
+        canvasData.data[index + 3] = a;
+      }
+
+      function updateCanvas() {
+        ctx.putImageData(canvasData, 0, 0);
+      }
+
+      class Point3 {
+        constructor(x, y, z) {
+          this.x = x;
+          this.y = y;
+          this.z = z;
+        }
+
+        toString() {
+          return `Vec3(${this.x}, ${this.y}, ${this.z})`;
+        }
+      }
+
+      class Vec3 {
+        constructor(x, y, z) {
+          this.x = x;
+          this.y = y;
+          this.z = z;
+        }
+
+        toString() {
+          return `Vec3(${this.x}, ${this.y}, ${this.z})`;
+        }
+
+        length() {
+          return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
+        }
+
+        add(vec) {
+          return new Vec3(this.x + vec.x, this.y + vec.y, this.z + vec.z);
+        }
+
+        sub(vec) {
+          return new Vec3(this.x - vec.x, this.y - vec.y, this.z - vec.z);
+        }
+
+        mul(vec) {
+          return new Vec3(this.x * vec.x, this.y * vec.y, this.z * vec.z);
+        }
+
+        mulNum(n) {
+          return new Vec3(this.x * n, this.y * n, this.z * n);
+        }
+
+        divNum(n) {
+          return this.mulNum(1 / n);
+        }
+
+        dot(vec) {
+          return this.x * vec.x + this.y * vec.y + this.z * vec.z;
+        }
+
+        cross(vec) {
+          return new Vec3(
+            this.y * vec.z - vec.y * this.z,
+            this.z * vec.x - vec.z * this.x,
+            this.x * vec.y - vec.x * this.y
+          );
+        }
+
+        unit() {
+          return this.divNum(this.length());
+        }
+
+        distance(vec) {
+          return vec.sub(this).length();
+        }
+      }
+
+      class Ray {
+        constructor(origin, dir) {
+          this.origin = origin;
+          this.dir = dir;
+        }
+
+        toString() {
+          return `Ray(${this.origin}, ${this.dir})`;
+        }
+
+        at(t) {
+          return this.origin + this.dir.mulNum(t);
+        }
+      }
+
+      class Sphere {
+        constructor(center, radius) {
+          this.center = center;
+          this.radius = radius;
+        }
+
+        toString() {
+          return `Sphere(${this.center}, ${this.radius})`;
+        }
+
+        hit(ray) {
+          const oc = ray.origin.sub(this.center);
+          const a = ray.dir.dot(ray.dir);
+          const b = oc.dot(ray.dir) * 2;
+          const c = oc.dot(oc) - this.radius * this.radius;
+          const discriminant = b * b - 4 * a * c;
+          return discriminant > 0;
+        }
+      }
+
+      const scene = [
+        new Sphere(new Vec3(0, 0, -1), 0.5),
+        new Sphere(new Vec3(1, 0, -1), 0.25),
+      ];
+
+      const aspectRatio = canvas.width / canvas.height;
+
+      const viewportHeight = 2;
+      const viewportWidth = viewportHeight * aspectRatio;
+      const focalLength = 0.5;
+
+      //camera
+      const origin = new Vec3(0, 0, 0);
+      const horizontal = new Vec3(viewportWidth, 0, 0);
+      const vertical = new Vec3(0, viewportHeight, 0);
+      const lowerLeftCorner = origin
+        .sub(horizontal.divNum(2))
+        .sub(vertical.divNum(2))
+        .sub(new Vec3(0, 0, focalLength));
+
+      function rayColor(ray) {
+        for (let i = 0; i < scene.length; i++) {
+          if (scene[i].hit(ray)) {
+            return new Vec3(255, 0, 0);
+          }
+        }
+
+        const unitDir = ray.dir.unit();
+        const t = 0.5 * (unitDir.y + 1.0);
+        return new Vec3(255, 255, 255)
+          .mulNum(1.0 - t)
+          .add(new Vec3(125, 178, 255).mulNum(t));
+      }
+
+      const sampleCount = 50;
+
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          let color = new Vec3(0, 0, 0);
+
+          for (let i = 0; i < sampleCount; i++) {
+            const u = (x + Math.random()) / (canvas.width - 1);
+            const v = (y + Math.random()) / (canvas.height - 1);
+
+            const r = new Ray(
+              origin,
+              lowerLeftCorner
+                .add(horizontal.mulNum(u))
+                .add(vertical.mulNum(v))
+                .sub(origin)
+            );
+
+            color = color.add(rayColor(r));
+          }
+
+          drawPixel(
+            x,
+            y,
+            color.x / sampleCount,
+            color.y / sampleCount,
+            color.z / sampleCount,
+            255
+          );
+        }
+      }
+
+      function min(list) {
+        if (list.length === 2) {
+          return list[0] < list[1] ? list[0] : list[1];
+        }
+
+        if (list.length === 1) {
+          return list[0];
+        }
+
+        if (list.length === 0) {
+          return null;
+        }
+
+        if (list[0] < min(list.slice(1))) {
+          return list[0];
+        } else {
+          return min(list.slice(1));
+        }
+      }
+
+      console.log(min([5, 23, 4, 5643, 646]));
+      console.log(min([4, 3, 2, 1]));
+      console.log(min([2, 3, 4, 5]));
+
+      updateCanvas();
+    </script>
+  </body>
+</html>
