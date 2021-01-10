@@ -44,13 +44,18 @@
 
       const canvasData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-      function drawPixel(x, y, r, g, b, a) {
+      function drawPixel(x, y, color, sampleCount) {
+        const divider = (1 / sampleCount) * 255;
+        const r = color.x * divider;
+        const g = color.y * divider;
+        const b = color.z * divider;
+
         var index = (x + y * canvas.width) * 4;
 
         canvasData.data[index + 0] = r;
         canvasData.data[index + 1] = g;
         canvasData.data[index + 2] = b;
-        canvasData.data[index + 3] = a;
+        canvasData.data[index + 3] = 255;
       }
 
       function updateCanvas() {
@@ -136,12 +141,77 @@
         }
 
         at(t) {
-          return this.origin + this.dir.mulNum(t);
+          return this.origin.add(this.dir.mulNum(t));
         }
       }
 
-      class Sphere {
+      class HitData {
+        constructor(at, normal, t) {
+          this.at;
+          this.normal = normal;
+          this.t = t;
+        }
+      }
+
+      class HitResult {
+        constructor(isHit, data) {
+          this.isHit = isHit;
+          this.data = data;
+        }
+
+        static hit(ray, at, outNormal, t) {
+          let normal;
+          let isFront;
+          if (ray.dir.dot(outNormal) > 0) {
+            isFront = false;
+            normal = outNormal.mulNum(-1);
+          } else {
+            normal = outNormal;
+            isFront = true;
+          }
+
+          return new HitResult(true, new HitData(at, normal, t));
+        }
+
+        static miss() {
+          return new HitResult(false, null);
+        }
+      }
+
+      class Hittable {
+        hit(ray, tMin, tMax) {
+          throw Error("Not implemented error!");
+        }
+      }
+
+      class HittableList {
+        constructor() {
+          this.objects = [];
+        }
+
+        add(obj) {
+          this.objects.push(obj);
+        }
+
+        hit(ray, tMin, tMax) {
+          let result = HitResult.miss();
+          let closest = tMax;
+
+          this.objects.forEach((obj) => {
+            const objResult = obj.hit(ray, tMin, closest);
+            if (objResult.isHit) {
+              result = objResult;
+              closest = objResult.data.t;
+            }
+          });
+
+          return result;
+        }
+      }
+
+      class Sphere extends Hittable {
         constructor(center, radius) {
+          super();
           this.center = center;
           this.radius = radius;
         }
@@ -150,17 +220,35 @@
           return `Sphere(${this.center}, ${this.radius})`;
         }
 
-        hit(ray) {
+        hit(ray, tMin, tMax) {
           const oc = ray.origin.sub(this.center);
           const a = ray.dir.dot(ray.dir);
           const b = oc.dot(ray.dir) * 2;
           const c = oc.dot(oc) - this.radius * this.radius;
           const discriminant = b * b - 4 * a * c;
-          return discriminant > 0;
+
+          if (discriminant < 0) {
+            return HitResult.miss();
+          }
+
+          let root = (-b - Math.sqrt(discriminant)) / (2 * a);
+          if (root < tMin || root > tMax) {
+            root = (-b + Math.sqrt(discriminant)) / (2 * a);
+            if (root < tMin || root > tMax) {
+              return false;
+            }
+          }
+
+          const at = ray.at(root);
+          const outNormal = at.sub(this.center).divNum(this.radius);
+          return HitResult.hit(ray, at, outNormal, root);
         }
       }
 
-      const scene = [new Sphere(new Vec3(0, 0, -1), 0.5)];
+      const world = new HittableList();
+      world.add(new Sphere(new Vec3(0, 0, -1), 0.5));
+      world.add(new Sphere(new Vec3(0, -100.5, -1), 100));
+
       const aspectRatio = canvas.width / canvas.height;
 
       const viewportHeight = 2;
@@ -177,17 +265,20 @@
         .sub(new Vec3(0, 0, focalLength));
 
       function rayColor(ray) {
-        for (let i = 0; i < scene.length; i++) {
-          if (scene[i].hit(ray)) {
-            return new Vec3(255, 0, 0);
-          }
+        const result = world.hit(ray, 0, Infinity);
+        if (result.isHit) {
+          return new Vec3(
+            result.data.normal.x + 1,
+            result.data.normal.y + 1,
+            result.data.normal.z + 1
+          ).mulNum(0.5);
         }
 
         const unitDir = ray.dir.unit();
         const t = 0.5 * (unitDir.y + 1.0);
-        return new Vec3(255, 255, 255)
+        return new Vec3(1, 1, 1)
           .mulNum(1.0 - t)
-          .add(new Vec3(125, 178, 255).mulNum(t));
+          .add(new Vec3(0.5, 0.6, 1).mulNum(t));
       }
 
       const sampleCount = 10;
@@ -211,14 +302,7 @@
             color = color.add(rayColor(r));
           }
 
-          drawPixel(
-            x,
-            y,
-            color.x / sampleCount,
-            color.y / sampleCount,
-            color.z / sampleCount,
-            255
-          );
+          drawPixel(x, canvas.height - y, color, sampleCount);
         }
       }
 
