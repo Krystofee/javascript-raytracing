@@ -67,6 +67,17 @@ class Vec3 {
     return vec.sub(this).length();
   }
 
+  isNearZero() {
+    const eta = 1e-8;
+    return (
+      Math.abs(this.x) < eta && Math.abs(this.y) < eta && Math.abs(this.z) < eta
+    );
+  }
+
+  reflect(n) {
+    return this.sub(n.mulNum(this.dot(n) * 2));
+  }
+
   static random(min, max) {
     return new Vec3(
       randomRange(min, max),
@@ -167,22 +178,75 @@ class HittableList {
 }
 
 class ScatterResult {
-  constructor(ray, hitResult, attenuation, scattered) {
-    this.ray = ray;
-    this.hitResult = hitResult;
+  constructor(wasScattered, attenuation, scatteredRay) {
+    this.wasScattered = wasScattered;
     this.attenuation = attenuation;
-    this.scattered = scattered;
+    this.scatteredRay = scatteredRay;
+  }
+
+  toString() {
+    return `ScatterResult(${this.wasScattered}, ${this.attenuation}, ${this.scatteredRay})`;
+  }
+
+  static scattered(attenuation, scatteredRay) {
+    return new ScatterResult(true, attenuation, scatteredRay);
+  }
+
+  static absorbed() {
+    return new ScatterResult(false);
   }
 }
 
 class Material {
-  scatter(ray, hitResult, attenuation, scattered) {
+  scatter(ray, hitResult) {
     throw Error();
   }
 }
 
 class Lambertian extends Material {
-  scatter(ray, hitResult, attenuation, scattered) {}
+  constructor(albedo) {
+    super();
+    this.albedo = albedo;
+  }
+
+  toString() {
+    return `Lambertian(${this.albedo})`;
+  }
+
+  scatter(ray, hitResult) {
+    let scatterDirection = hitResult.data.normal.add(Vec3.randomInUnitSphere());
+
+    if (scatterDirection.isNearZero()) {
+      scatterDirection = hitResult.data.normal;
+    }
+
+    const scatteredRay = new Ray(hitResult.data.at, scatterDirection);
+    const attenuation = this.albedo;
+    const result = ScatterResult.scattered(attenuation, scatteredRay);
+    return result;
+  }
+}
+
+class Metal extends Material {
+  constructor(albedo, fuzz = 0) {
+    super();
+    this.albedo = albedo;
+    this.fuzz = fuzz;
+  }
+
+  scatter(ray, hitResult) {
+    const reflected = ray.dir.unit().reflect(hitResult.data.normal);
+    const scattered = new Ray(
+      hitResult.data.at,
+      reflected.add(Vec3.randomInUnitSphere().mulNum(this.fuzz))
+    );
+
+    if (scattered.dir.dot(hitResult.data.normal) > 0) {
+      return ScatterResult.scattered(this.albedo, scattered);
+    }
+
+    return ScatterResult.absorbed();
+  }
 }
 
 class Sphere extends Hittable {
@@ -199,22 +263,26 @@ class Sphere extends Hittable {
 
   hit(ray, tMin, tMax) {
     const oc = ray.origin.sub(this.center);
-    const a = ray.dir.dot(ray.dir);
-    const b = oc.dot(ray.dir) * 2;
-    const c = oc.dot(oc) - this.radius * this.radius;
-    const discriminant = b * b - 4 * a * c;
+    const a = ray.dir.lengthSquared();
+    const halfB = oc.dot(ray.dir);
+    const c = oc.lengthSquared() - this.radius * this.radius;
+    const discriminant = halfB * halfB - a * c;
 
     if (discriminant < 0) {
       return HitResult.miss();
     }
 
-    let root = (-b - Math.sqrt(discriminant)) / (2 * a);
+    const sqrtd = Math.sqrt(discriminant);
+
+    let root = (-halfB - sqrtd) / a;
     if (root < tMin || root > tMax) {
-      root = (-b + Math.sqrt(discriminant)) / (2 * a);
+      root = (-halfB + sqrtd) / a;
       if (root < tMin || root > tMax) {
         return false;
       }
     }
+
+    root -= 0.001;
 
     const at = ray.at(root);
     const outNormal = at.sub(this.center).divNum(this.radius);
@@ -224,26 +292,26 @@ class Sphere extends Hittable {
 
 function rayColor(ray, world, depth) {
   if (depth <= 0) {
-    return new Vec3(0, 0, 0);
+    return new Vec3(0.0, 0.0, 0.0);
   }
 
   const result = world.hit(ray, 0.0, Infinity);
 
   if (result.isHit) {
-    const target = result.data.at
-      .add(result.data.normal)
-      .add(Vec3.randomInUnitSphere().unit());
-
-    return rayColor(
-      new Ray(result.data.at, target.sub(result.data.at)),
-      world,
-      depth - 1
-    ).mulNum(0.5);
+    const scatterResult = result.data.material.scatter(ray, result);
+    if (scatterResult.wasScattered) {
+      return rayColor(scatterResult.scatteredRay, world, depth - 1).mul(
+        scatterResult.attenuation
+      );
+    }
+    return new Vec3(0.0, 0.0, 0.0);
   }
 
   const unitDir = ray.dir.unit();
   const t = 0.5 * (unitDir.y + 1.0);
-  return new Vec3(1, 1, 1).mulNum(1.0 - t).add(new Vec3(0.5, 0.6, 1).mulNum(t));
+  return new Vec3(1.0, 1.0, 1.0)
+    .mulNum(1.0 - t)
+    .add(new Vec3(0.5, 0.6, 1).mulNum(t));
 }
 
 class Screen {
@@ -292,11 +360,16 @@ function render({
 }) {
   // Prepare context
 
-  const lambertianMaterial = new Lambertian();
+  const groundMaterial = new Lambertian(new Vec3(0.8, 0.8, 0));
+  const rightSphereMaterial = new Metal(new Vec3(0.9, 0.9, 0.9));
+  const centerSphereMaterial = new Lambertian(new Vec3(0.1, 0.6, 0.2));
+  const leftSphereMaterial = new Metal(new Vec3(0.3, 0.2, 0.9), 0.7);
 
   const globalWorld = new HittableList();
-  globalWorld.add(new Sphere(new Vec3(0, 0, -1), 0.5), lambertianMaterial);
-  globalWorld.add(new Sphere(new Vec3(0, -100.5, -1), 100), lambertianMaterial);
+  globalWorld.add(new Sphere(new Vec3(0, 0, -1), 0.5, centerSphereMaterial));
+  globalWorld.add(new Sphere(new Vec3(1, 0, -1), 0.5, leftSphereMaterial));
+  globalWorld.add(new Sphere(new Vec3(-1, 0, -1), 0.5, rightSphereMaterial));
+  globalWorld.add(new Sphere(new Vec3(0, -100.5, -2), 100, groundMaterial));
 
   const origin = new Vec3(cameraOrigin[0], cameraOrigin[1], cameraOrigin[2]);
 

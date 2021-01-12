@@ -14,8 +14,8 @@
 
       #main-canvas {
         border: 1px solid #00000030;
-        width: 1000px;
-        height: auto;
+        /* width: 1000px;
+        height: auto; */
       }
 
       .flex {
@@ -33,7 +33,7 @@
   </head>
   <body>
     <div class="flex center mt-4">
-      <canvas id="main-canvas" width="768" height="432"></canvas>
+      <canvas id="main-canvas" width="960" height="540"></canvas>
     </div>
 
     <script>
@@ -47,7 +47,7 @@
       }
 
       const sampleCount = 100;
-      const maxDepth = 2;
+      const maxDepth = 100;
 
       const canvasWidth = canvas.width;
       const canvasHeight = canvas.height;
