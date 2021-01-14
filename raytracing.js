@@ -78,6 +78,15 @@ class Vec3 {
     return this.sub(n.mulNum(this.dot(n) * 2));
   }
 
+  refract(n, etaIoverEtaT) {
+    const cosTheta = Math.min(this.mulNum(-1).dot(n), 1.0);
+    const rOutPerp = this.add(cosTheta * n).mulNum(etaIoverEtaT);
+    const rOutParallel = n.mul(
+      -Math.sqrt(Math.abs(1.0 - rOutPerp.lengthSquared()))
+    );
+    return rOutPerp.add(rOutParallel);
+  }
+
   static random(min, max) {
     return new Vec3(
       randomRange(min, max),
@@ -249,6 +258,24 @@ class Metal extends Material {
   }
 }
 
+class Dielectric extends Material {
+  constructor(refractionIndex) {
+    super();
+    this.refractionIndex = refractionIndex;
+  }
+
+  scatter(ray, hitResult) {
+    const refractionRatio = hitResult.data.isFront
+      ? 1 / this.refractionIndex
+      : this.refractionIndex;
+    const refracted = ray.dir
+      .unit()
+      .refract(hitResult.data.normal, refractionRatio);
+    const scatteredRay = new Ray(hitResult.data.at, refracted);
+    return ScatterResult.scattered(new Vec3(1, 1, 1), scatteredRay);
+  }
+}
+
 class Sphere extends Hittable {
   constructor(center, radius, material) {
     super();
@@ -362,8 +389,8 @@ function render({
 
   const groundMaterial = new Lambertian(new Vec3(0.8, 0.8, 0));
   const rightSphereMaterial = new Metal(new Vec3(0.9, 0.9, 0.9));
-  const centerSphereMaterial = new Lambertian(new Vec3(0.1, 0.6, 0.2));
-  const leftSphereMaterial = new Metal(new Vec3(0.3, 0.2, 0.9), 0.7);
+  const centerSphereMaterial = new Lambertian(new Vec3(0.1, 0.6, 0));
+  const leftSphereMaterial = new Dielectric(1.3);
 
   const globalWorld = new HittableList();
   globalWorld.add(new Sphere(new Vec3(0, 0, -1), 0.5, centerSphereMaterial));
