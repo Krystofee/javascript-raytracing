@@ -68,7 +68,7 @@ class Vec3 {
   }
 
   isNearZero() {
-    const eta = 1e-8;
+    const eta = 0.0000001;
     return (
       Math.abs(this.x) < eta && Math.abs(this.y) < eta && Math.abs(this.z) < eta
     );
@@ -80,8 +80,8 @@ class Vec3 {
 
   refract(n, etaIoverEtaT) {
     const cosTheta = Math.min(this.mulNum(-1).dot(n), 1.0);
-    const rOutPerp = this.add(cosTheta * n).mulNum(etaIoverEtaT);
-    const rOutParallel = n.mul(
+    const rOutPerp = this.add(n.mulNum(cosTheta)).mulNum(etaIoverEtaT);
+    const rOutParallel = n.mulNum(
       -Math.sqrt(Math.abs(1.0 - rOutPerp.lengthSquared()))
     );
     return rOutPerp.add(rOutParallel);
@@ -122,11 +122,12 @@ class Ray {
 }
 
 class HitData {
-  constructor(at, normal, t, material) {
+  constructor(at, normal, t, material, isFront) {
     this.at = at;
     this.normal = normal;
     this.t = t;
     this.material = material;
+    this.isFront = isFront;
   }
 }
 
@@ -143,11 +144,11 @@ class HitResult {
       isFront = false;
       normal = outNormal.mulNum(-1);
     } else {
-      normal = outNormal;
       isFront = true;
+      normal = outNormal;
     }
 
-    return new HitResult(true, new HitData(at, normal, t, material));
+    return new HitResult(true, new HitData(at, normal, t, material, isFront));
   }
 
   static miss() {
@@ -229,7 +230,10 @@ class Lambertian extends Material {
       scatterDirection = hitResult.data.normal;
     }
 
-    const scatteredRay = new Ray(hitResult.data.at, scatterDirection);
+    const scatteredRay = new Ray(
+      hitResult.data.at.add(hitResult.data.normal.mulNum(0.01)),
+      scatterDirection
+    );
     const attenuation = this.albedo;
     const result = ScatterResult.scattered(attenuation, scatteredRay);
     return result;
@@ -268,11 +272,30 @@ class Dielectric extends Material {
     const refractionRatio = hitResult.data.isFront
       ? 1 / this.refractionIndex
       : this.refractionIndex;
-    const refracted = ray.dir
-      .unit()
-      .refract(hitResult.data.normal, refractionRatio);
-    const scatteredRay = new Ray(hitResult.data.at, refracted);
+    const rayUnit = ray.dir.unit();
+
+    const cosTheta = Math.min(rayUnit.mulNum(-1).dot(hitResult.data.normal), 1);
+    const sinTheta = Math.sqrt(1 - cosTheta * cosTheta);
+
+    let direction;
+    const cannotRefract = refractionRatio * sinTheta > 1;
+    if (
+      cannotRefract ||
+      this.reflectance(cosTheta, refractionRatio) > Math.random()
+    ) {
+      direction = rayUnit.reflect(hitResult.data.normal);
+    } else {
+      direction = rayUnit.refract(hitResult.data.normal, refractionRatio);
+    }
+
+    const scatteredRay = new Ray(hitResult.data.at, direction);
     return ScatterResult.scattered(new Vec3(1, 1, 1), scatteredRay);
+  }
+
+  reflectance(cosine, refIdx) {
+    let r0 = (1 - refIdx) / (1 + refIdx);
+    r0 = r0 * r0;
+    return r0 + (1 - r0) * Math.pow(1 - cosine, 5);
   }
 }
 
@@ -387,15 +410,16 @@ function render({
 }) {
   // Prepare context
 
-  const groundMaterial = new Lambertian(new Vec3(0.8, 0.8, 0));
+  const groundMaterial = new Lambertian(new Vec3(0.9, 0.2, 0.4));
   const rightSphereMaterial = new Metal(new Vec3(0.9, 0.9, 0.9));
   const centerSphereMaterial = new Lambertian(new Vec3(0.1, 0.6, 0));
-  const leftSphereMaterial = new Dielectric(1.3);
+  const leftSphereMaterial = new Dielectric(1.4);
 
   const globalWorld = new HittableList();
   globalWorld.add(new Sphere(new Vec3(0, 0, -1), 0.5, centerSphereMaterial));
-  globalWorld.add(new Sphere(new Vec3(1, 0, -1), 0.5, leftSphereMaterial));
-  globalWorld.add(new Sphere(new Vec3(-1, 0, -1), 0.5, rightSphereMaterial));
+  globalWorld.add(new Sphere(new Vec3(1, 0, -1), 0.5, rightSphereMaterial));
+  globalWorld.add(new Sphere(new Vec3(-1, 0, -1), 0.5, leftSphereMaterial));
+  globalWorld.add(new Sphere(new Vec3(-1, 0, -1), -0.4, leftSphereMaterial));
   globalWorld.add(new Sphere(new Vec3(0, -100.5, -2), 100, groundMaterial));
 
   const origin = new Vec3(cameraOrigin[0], cameraOrigin[1], cameraOrigin[2]);
